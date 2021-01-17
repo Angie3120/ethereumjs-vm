@@ -1,5 +1,7 @@
 /* eslint-disable no-dupe-class-members */
 
+import { EIP2930Transaction } from './eip2930Transaction'
+
 import { Buffer } from 'buffer'
 import {
   Address,
@@ -16,13 +18,15 @@ import {
   MAX_INTEGER,
 } from 'ethereumjs-util'
 import Common from '@ethereumjs/common'
-import { TxOptions, TxData, JsonTx } from './types'
+import { TxOptions, TxData, JsonTx, EIP2930TransactionData } from './types'
 
 // secp256k1n/2
 const N_DIV_2 = new BN('7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0', 16)
 
 /**
- * An Ethereum transaction.
+ * An Ethereum transaction. This base transaction class also is a Transaction factory, with the optional transactionID passed
+ * to their respective static methods. If this parameter is passed, we invoke EIP-2718 to figure out which transaction object
+ * type that should be created.
  */
 export default class Transaction {
   public readonly common: Common
@@ -36,11 +40,35 @@ export default class Transaction {
   public readonly r?: BN
   public readonly s?: BN
 
-  public static fromTxData(txData: TxData, opts?: TxOptions) {
+  public static fromTxData(txData: TxData, opts?: TxOptions, transactionID?: number): Transaction | EIP2930Transaction {
+    if (transactionID) {
+      switch (transactionID) {
+        case 1: 
+          return EIP2930Transaction.fromTxData(<EIP2930TransactionData>txData, opts)
+        default: 
+          throw new Error(`Transaction Type with ID ${transactionID} not supported`)
+      } 
+    }
+
     return new Transaction(txData, opts)
   }
 
-  public static fromRlpSerializedTx(serialized: Buffer, opts?: TxOptions) {
+  // Note: this is a raw transaction which is decoded from looking up the TxHash
+  // This means that the first byte of the Buffer could be <= 0x7f, which implies it is a TypedTransaction (EIP-2718)
+  public static fromRlpSerializedTx(serialized: Buffer, opts?: TxOptions): Transaction | EIP2930Transaction {
+    
+    let transactionID = parseInt(serialized.slice(0,1).toString('hex'), 16)
+
+    // Note: RLP-encoded transactions (LegacyTransaction) start with a first byte >= 0x80
+    if (transactionID <= 0x7f) {
+      switch (transactionID) {
+        case 1: 
+          return EIP2930Transaction.fromRlpSerializedTx(serialized.slice(1), opts)
+        default: 
+          throw new Error(`Transaction Type with ID ${transactionID} not supported`)
+      } 
+    }
+
     const values = rlp.decode(serialized)
 
     if (!Array.isArray(values)) {
@@ -50,7 +78,16 @@ export default class Transaction {
     return this.fromValuesArray(values, opts)
   }
 
-  public static fromValuesArray(values: Buffer[], opts?: TxOptions) {
+  public static fromValuesArray(values: Buffer[], opts?: TxOptions, transactionID?: number): Transaction | EIP2930Transaction {
+    if (transactionID) {
+      switch (transactionID) {
+        case 1: 
+          return EIP2930Transaction.fromValuesArray(values, opts)
+        default: 
+          throw new Error(`Transaction Type with ID ${transactionID} not supported`)
+      } 
+    }
+
     if (values.length !== 6 && values.length !== 9) {
       throw new Error(
         'Invalid transaction. Only expecting 6 values (for unsigned tx) or 9 values (for signed tx).'
@@ -226,7 +263,7 @@ export default class Transaction {
    * ```
    * @param privateKey Must be 32 bytes in length.
    */
-  sign(privateKey: Buffer) {
+  sign(privateKey: Buffer): Transaction | EIP2930Transaction {
     if (privateKey.length !== 32) {
       throw new Error('Private key must be 32 bytes in length.')
     }

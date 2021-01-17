@@ -1,10 +1,11 @@
 import { AddressLike, BNLike, BufferLike } from 'ethereumjs-util'
 import Common from '@ethereumjs/common'
+import { Transaction } from '.'
 
 /**
  * The options for initializing a Transaction.
  */
-export interface TxOptions {
+interface BaseTxOptions {
   /**
    * A Common object defining the chain and hardfork for the transaction.
    *
@@ -26,10 +27,16 @@ export interface TxOptions {
   freeze?: boolean
 }
 
+export interface EIP2930TxOptions extends BaseTxOptions {
+
+}
+
+export type TxOptions = BaseTxOptions | EIP2930TxOptions
+
 /**
  * An object with an optional field with each of the transaction's values.
  */
-export interface TxData {
+export interface BaseTxData {
   /**
    * The transaction's nonce.
    */
@@ -76,6 +83,21 @@ export interface TxData {
   s?: BNLike
 }
 
+interface TypedTransactionData extends BaseTxData {
+  transactionType: number
+}
+
+export interface EIP2930TransactionData extends TypedTransactionData {
+  accessList: any // TODO: enforce this type
+  yParity?: BufferLike,
+  chainId: BufferLike
+}
+
+export type TxData = BaseTxData | EIP2930TransactionData
+
+
+
+
 /**
  * An object with all of the transaction's values represented as strings.
  */
@@ -89,4 +111,10 @@ export interface JsonTx {
   r?: string
   s?: string
   value?: string
+}
+
+export interface BaseTransaction<TxDataType, TxOptionsType> {
+  fromTxData(txData: TxDataType, opts?: TxOptionsType): BaseTransaction<TxDataType, TxOptionsType>
+  fromRlpSerializedTx(serialized: Buffer, opts?: TxOptionsType): BaseTransaction<TxDataType, TxOptionsType>
+  fromValuesArray(values: Buffer[], opts?: TxOptionsType): BaseTransaction<TxDataType, TxOptionsType>
 }
